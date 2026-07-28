@@ -203,18 +203,27 @@ async def on_member_update(before, after):
 
 @bot.event
 async def on_message_delete(message):
-    """Registra mensagens apagadas (somente no canal de Admin)."""
+    # Ignora mensagens deletadas do próprio bot ou de outros bots
     if message.author.bot:
         return
 
     admin_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
-    if admin_channel:
-        now = datetime.now(TIMEZONE).strftime("%H:%M:%S")
-        content = message.content if message.content else "[Sem texto / Mídia]"
-        await admin_channel.send(
-            f"🗑️ **[{now}] Mensagem Apagada** no canal #{message.channel.name} | "
-            f"Autor: `{message.author.display_name}`\n> {content}"
-        )
+    if not admin_channel:
+        return
+
+    # Garante que funciona em qualquer canal do servidor
+    channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
+    content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
+    
+    time_str = datetime.now(TIMEZONE).strftime("%H:%M:%S")
+
+    msg = (
+        f"🗑️ **[{time_str}]** Mensagem de `{message.author.display_name}` "
+        f"foi apagada no canal **#{channel_name}**:\n"
+        f"> {content}"
+    )
+
+    await admin_channel.send(msg)
 
 # ==========================================
 # 3. COMANDOS ADMINISTRATIVOS & BANCO DE DADOS
