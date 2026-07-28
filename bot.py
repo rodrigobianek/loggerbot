@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 import pytz
 import discord
+from discord import app_commands
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import database
@@ -15,11 +16,11 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Fuso horário local (exemplo: Brasil)
+# Fuso horário local (Brasil)
 TIMEZONE = pytz.timezone("America/Sao_Paulo")
 
 # ID do canal onde o bot vai postar os logs em tempo real
-LOG_CHANNEL_ID = 1531654435573465318  # <--- Altere para o ID real do seu canal
+LOG_CHANNEL_ID = 123456789012345678  # <--- Altere para o ID real do seu canal
 
 # Dicionário em memória para registrar quando alguém entra no canal de voz
 # Estrutura: { user_id: { "channel": name, "join_time": datetime } }
@@ -28,11 +29,19 @@ active_sessions = {}
 @bot.event
 async def on_ready():
     database.init_db()
+    
+    # Sincroniza os Slash Commands (comandos com /) com o Discord
+    try:
+        synced = await bot.tree.sync()
+        print(f"Sincronizados {len(synced)} comando(s) de barra (/)")
+    except Exception as e:
+        print(f"Erro ao sincronizar comandos: {e}")
+        
     print(f"Bot conectado com sucesso como {bot.user}")
     
     # Inicia o agendador para o relatório diário
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-    # Exemplo: Envia o relatório diariamente às 23:59
+    # Envia o relatório diariamente às 23:59
     scheduler.add_job(send_daily_report, "cron", hour=23, minute=59)
     scheduler.start()
 
@@ -99,19 +108,24 @@ async def on_voice_state_update(member, before, after):
                 f"🟡 **[{time_str}]** `{member.display_name}` mudou do canal **{before.channel.name}** para **{after.channel.name}**."
             )
 
-@bot.command(name="log")
-async def fetch_log(ctx, date_str: str = None):
-    """Comando para consultar logs. Ex: !log 2026-07-28"""
-    if not date_str:
-        date_str = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+# Slash Command: /log
+@bot.tree.command(name="log", description="Consulta os registros de voz de uma data específica ou de hoje.")
+@app_commands.describe(data="Data da consulta no formato AAAA-MM-DD. Deixe em branco para ver o dia de hoje.")
+async def fetch_log(interaction: discord.Interaction, data: str = None):
+    # Se nenhuma data for informada, assume a data atual
+    if not data:
+        data = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
 
-    logs = database.get_logs_by_date(date_str)
+    logs = database.get_logs_by_date(data)
     
     if not logs:
-        await ctx.send(f"Nenhum registro encontrado para a data: `{date_str}`. (Use o formato AAAA-MM-DD)")
+        await interaction.response.send_message(
+            f"Nenhum registro encontrado para a data: `{data}`. (Formato esperado: AAAA-MM-DD)",
+            ephemeral=False
+        )
         return
 
-    response = f"📋 **Relatório de Atividade de Voz - {date_str}**\n\n"
+    response = f"📋 **Relatório de Atividade de Voz - {data}**\n\n"
     for user_name, channel_name, join_time, leave_time, duration in logs:
         mins = duration // 60
         secs = duration % 60
@@ -119,31 +133,31 @@ async def fetch_log(ctx, date_str: str = None):
         exit_time = leave_time.split(" ")[1]
         response += f"• **{user_name}** | Canal: `{channel_name}` | Permanência: {mins}m {secs}s ({entry_time} às {exit_time})\n"
 
-    # Se a mensagem for muito longa para o Discord, envia em partes
+    # Envia a resposta (lidando com o limite de 2000 caracteres do Discord)
     if len(response) > 2000:
-        for chunk in [response[i:i+1900] for i in range(0, len(response), 1900)]:
-            await ctx.send(chunk)
+        chunks = [response[i:i+1900] for i in range(0, len(response), 1900)]
+        await interaction.response.send_message(chunks[0])
+        for chunk in chunks[1:]:
+            await interaction.channel.send(chunk)
     else:
-        await ctx.send(response)
+        await interaction.response.send_message(response)
 
 async def send_daily_report():
     """Função executada pelo agendador para o relatório diário."""
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     if log_channel:
         today_str = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
-        await log_channel.send(f"⏰ **Relatório Automático Diário**")
-        # Simula o contexto para reaproveitar a lógica do comando
         logs = database.get_logs_by_date(today_str)
         if not logs:
-            await log_channel.send(f"Nenhuma atividade gravada hoje ({today_str}).")
+            await log_channel.send(f"⏰ **Relatório Diário ({today_str}):** Nenhuma atividade gravada hoje.")
             return
             
-        report = f"📊 **Resumo do Dia ({today_str}):**\n"
+        report = f"📊 **Relatório Automático Diário ({today_str}):**\n"
         for user_name, channel_name, _, _, duration in logs:
             report += f"• `{user_name}` ficou {duration // 60}m no canal `{channel_name}`\n"
         await log_channel.send(report)
 
-# Executa o bot lendo a variável de ambiente (necessário no Railway)
+# Executa o bot lendo a variável de ambiente
 TOKEN = os.getenv("DISCORD_TOKEN")
 if TOKEN:
     bot.run(TOKEN)
