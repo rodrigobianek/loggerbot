@@ -298,52 +298,42 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
         await interaction.response.send_message(response, ephemeral=True)
 
 
-@bot.tree.command(name="export_db", description="[ADMIN] Faz o download do arquivo do banco de dados SQLite.")
+@bot.tree.command(name="export_db", description="[CARGO BOT] Faz o download do arquivo do banco de dados SQLite.")
 async def export_db(interaction: discord.Interaction):
+    """Envia o arquivo .db diretamente no chat para membros com o cargo 'Bot' ou o Dono."""
     user = interaction.user
     guild = interaction.guild
 
-    # ---------------------------------------------------------
-    # PRINT DE DEBUG NO CONSOLE (Aparecerá nos logs do Railway/Terminal)
-    # ---------------------------------------------------------
-    print("=" * 50)
-    print(f"DEBUG /export_db executado por: {user.name} ({user.id})")
-    if guild:
-        print(f"Servidor: {guild.name} ({guild.id})")
-        print(f"É o dono do servidor? {user.id == guild.owner_id} (Dono ID: {guild.owner_id})")
-        
-        # Lista as permissões
-        is_admin = user.guild_permissions.administrator
-        print(f"Tem permissão de Administrador? {is_admin}")
-        
-        # Lista os cargos do usuário
-        roles = [r.name for r in user.roles]
-        print(f"Cargos do usuário: {roles}")
-    else:
-        print("Executado fora de uma Guild (DM).")
-    print("=" * 50)
+    # 1. Checa se é o Dono do Servidor
+    is_owner = (guild and user.id == guild.owner_id)
 
-    # ---------------------------------------------------------
-    # VERIFICAÇÃO DE PERMISSÃO
-    # ---------------------------------------------------------
-    # Checa se é administrador OU se é o dono do servidor
-    if not user.guild_permissions.administrator and user.id != guild.owner_id:
+    # 2. Checa se o usuário tem o cargo "Bot" (compara pelo nome exato do cargo)
+    has_bot_role = False
+    if hasattr(user, "roles"):
+        has_bot_role = any(role.name == "Bot" for role in user.roles)
+
+    # Se não for o Dono E não tiver o cargo "Bot", bloqueia a execução
+    if not is_owner and not has_bot_role:
         await interaction.response.send_message(
-            f"❌ Permissão negada para `{user.display_name}`. Este comando exige o cargo de Administrador.",
+            f"❌ Permissão negada para `{user.display_name}`. Este comando exige o cargo **Bot**.",
             ephemeral=True
         )
         return
 
-    # Se passou na permissão, continua o envio do banco de dados
+    # Processa o envio do banco de dados
     await interaction.response.defer(ephemeral=True)
     
     db_path = getattr(database, 'DB_NAME', 'database.db')
     
     if os.path.exists(db_path):
         file = discord.File(db_path, filename="database_backup.db")
-        await interaction.followup.send("📁 Aqui está a cópia atualizada da sua base de dados SQLite:", file=file, ephemeral=True)
+        await interaction.followup.send(
+            "📁 Aqui está a cópia atualizada da sua base de dados SQLite:", 
+            file=file, 
+            ephemeral=True
+        )
     else:
-        await interaction.followup.send("❌ Arquivo de banco de dados não encontrado no caminho.", ephemeral=True)
+        await interaction.followup.send("❌ Arquivo de banco de dados não encontrado no caminho especificado.", ephemeral=True)
 
 @fetch_log.error
 @export_db.error
