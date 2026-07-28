@@ -29,6 +29,8 @@ active_sessions = {}
 
 def is_channel_private(channel: discord.VoiceChannel) -> bool:
     """Verifica se o cargo @everyone NÃO tem permissão de ver o canal."""
+    if not channel:
+        return False
     everyone_overwrite = channel.overwrites_for(channel.guild.default_role)
     return everyone_overwrite.view_channel is False
 
@@ -49,7 +51,7 @@ async def on_ready():
     scheduler.start()
 
 # ==========================================
-# 1. LOGS DE CANAL DE VOZ
+# 1. LOGS DE CANAL DE VOZ & TRANSMISSÃO
 # ==========================================
 
 @bot.event
@@ -169,7 +171,7 @@ async def on_voice_state_update(member, before, after):
                 )
 
 # ==========================================
-# 2. LOGS DE REGISTRO DE AUDITORIA (ADMIN)
+# 2. LOGS DE REGISTRO DE AUDITORIA & MENSAGENS
 # ==========================================
 
 @bot.event
@@ -179,18 +181,19 @@ async def on_member_update(before, after):
     if not admin_channel:
         return
 
-    # Verifica se os cargos mudaram
     if before.roles != after.roles:
         now = datetime.now(TIMEZONE).strftime("%H:%M:%S")
         added_roles = [role.name for role in after.roles if role not in before.roles]
         removed_roles = [role.name for role in before.roles if role not in after.roles]
 
-        # Tenta descobrir quem alterou consultando o Audit Log
         executor = "Desconhecido/Sistema"
-        async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_role_update):
-            if entry.target.id == after.id:
-                executor = entry.user.display_name
-                break
+        try:
+            async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.member_role_update):
+                if entry.target.id == after.id:
+                    executor = entry.user.display_name
+                    break
+        except Exception:
+            pass
 
         if added_roles:
             await admin_channel.send(
@@ -203,7 +206,7 @@ async def on_member_update(before, after):
 
 @bot.event
 async def on_message_delete(message):
-    # Ignora mensagens deletadas do próprio bot ou de outros bots
+    """Captura a exclusão de mensagens em qualquer canal do servidor."""
     if message.author.bot:
         return
 
@@ -211,7 +214,6 @@ async def on_message_delete(message):
     if not admin_channel:
         return
 
-    # Garante que funciona em qualquer canal do servidor
     channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
     content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
     
@@ -262,21 +264,24 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
 @app_commands.checks.has_permissions(administrator=True)
 async def export_db(interaction: discord.Interaction):
     """Envia o arquivo .db diretamente no chat privado para o administrador."""
-    db_path = database.DB_NAME
+    await interaction.response.defer(ephemeral=True)
+    
+    db_path = getattr(database, 'DB_NAME', 'database.db')
+    
     if os.path.exists(db_path):
-        await interaction.response.send_message(
-            "📁 Aqui está a cópia atualizada da sua base de dados SQLite:",
-            file=discord.File(db_path),
-            ephemeral=True
-        )
+        file = discord.File(db_path, filename="database_backup.db")
+        await interaction.followup.send("📁 Aqui está a cópia atualizada da sua base de dados SQLite:", file=file, ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Arquivo de banco de dados não encontrado.", ephemeral=True)
+        await interaction.followup.send("❌ Arquivo de banco de dados não encontrado.", ephemeral=True)
 
 @fetch_log.error
 @export_db.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
 
 async def send_daily_report():
     admin_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
