@@ -1,0 +1,6 @@
+# .gitignore
+activity_logs.db
+__pycache__/
+*.pyc
+.env
+venv/
