@@ -231,10 +231,18 @@ async def on_message_delete(message):
 # 3. COMANDOS ADMINISTRATIVOS & BANCO DE DADOS
 # ==========================================
 
+# ==========================================
+# 3. COMANDOS ADMINISTRATIVOS & BANCO DE DADOS
+# ==========================================
+
 @bot.tree.command(name="log", description="[ADMIN] Consulta os registros de voz do servidor.")
 @app_commands.describe(data="Data da consulta no formato AAAA-MM-DD. Deixe em blank para o dia de hoje.")
-@app_commands.checks.has_permissions(administrator=True)
 async def fetch_log(interaction: discord.Interaction, data: str = None):
+    # Checagem manual de Administrador (Garante que o Dono ou Admins passem sem erro de cache)
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
+        return
+
     if not data:
         data = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
 
@@ -260,10 +268,15 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
     else:
         await interaction.response.send_message(response, ephemeral=True)
 
+
 @bot.tree.command(name="export_db", description="[ADMIN] Faz o download do arquivo do banco de dados SQLite.")
-@app_commands.checks.has_permissions(administrator=True)
 async def export_db(interaction: discord.Interaction):
     """Envia o arquivo .db diretamente no chat privado para o administrador."""
+    # Checagem manual de Administrador
+    if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
+        await interaction.response.send_message("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
+        return
+
     await interaction.response.defer(ephemeral=True)
     
     db_path = getattr(database, 'DB_NAME', 'database.db')
