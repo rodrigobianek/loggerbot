@@ -54,7 +54,7 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """Registra entrada, saída e troca de canais de voz com tratamento correto para o canal público."""
+    """Registra entrada, saída, troca de canal e transmissões de tela."""
     admin_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
     public_channel = bot.get_channel(PUBLIC_LOG_CHANNEL_ID)
     
@@ -62,9 +62,30 @@ async def on_voice_state_update(member, before, after):
     time_str = now.strftime("%H:%M:%S")
 
     # ---------------------------------------------------------
-    # 1. Usuário ENTROU em um canal de voz (vindo de fora)
+    # 1. TRANSMISSÃO DE TELA (STREAMING)
     # ---------------------------------------------------------
-    if before.channel is None and after.channel is not None:
+    if before.self_stream != after.self_stream:
+        channel = after.channel or before.channel
+        private = is_channel_private(channel) if channel else False
+        
+        if not before.self_stream and after.self_stream:
+            msg = f"📺 **[{time_str}]** `{member.display_name}` começou a transmitir a tela no canal **{channel.name}**."
+            if admin_channel:
+                await admin_channel.send(msg)
+            if public_channel and not private:
+                await public_channel.send(msg)
+                
+        elif before.self_stream and not after.self_stream:
+            msg = f"📺 **[{time_str}]** `{member.display_name}` encerrou a transmissão de tela no canal **{channel.name}**."
+            if admin_channel:
+                await admin_channel.send(msg)
+            if public_channel and not private:
+                await public_channel.send(msg)
+
+    # ---------------------------------------------------------
+    # 2. ENTROU EM UM CANAL DE VOZ
+    # ---------------------------------------------------------
+    elif before.channel is None and after.channel is not None:
         private = is_channel_private(after.channel)
         active_sessions[member.id] = {
             "channel": after.channel.name,
@@ -80,7 +101,7 @@ async def on_voice_state_update(member, before, after):
             await public_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 2. Usuário SAIU totalmente de um canal de voz
+    # 3. SAIU TOTALMENTE DO VOZ
     # ---------------------------------------------------------
     elif before.channel is not None and after.channel is None:
         if member.id in active_sessions:
@@ -108,7 +129,7 @@ async def on_voice_state_update(member, before, after):
                 await public_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 3. Usuário TROCOU de canal
+    # 4. TROCOU DE CANAL
     # ---------------------------------------------------------
     elif before.channel is not None and after.channel is not None and before.channel.id != after.channel.id:
         was_private = is_channel_private(before.channel)
@@ -126,35 +147,26 @@ async def on_voice_state_update(member, before, after):
                 duration_seconds=duration
             )
 
-        # Atualiza a sessão ativa para o novo canal
         active_sessions[member.id] = {
             "channel": after.channel.name,
             "join_time": now,
             "is_private": is_private_now
         }
         
-        # O Admin SEMPRE vê a transição exata
         if admin_channel:
             await admin_channel.send(
                 f"🟡 **[{time_str}]** `{member.display_name}` mudou de **{before.channel.name}** para **{after.channel.name}**."
             )
             
-        # Trata o Canal Público de acordo com a visibilidade das salas envolvidas
         if public_channel:
-            # Caso A: De Público para Privado -> Para o público, o usuário desconectou da sala pública
             if not was_private and is_private_now:
                 await public_channel.send(f"🔴 **[{time_str}]** `{member.display_name}` desconectou de **{before.channel.name}**.")
-                
-            # Caso B: De Privado para Público -> Para o público, o usuário acabou de entrar na sala pública
             elif was_private and not is_private_now:
                 await public_channel.send(f"🟢 **[{time_str}]** `{member.display_name}` entrou no canal **{after.channel.name}**.")
-                
-            # Caso C: De Público para Público -> Troca normal visível
             elif not was_private and not is_private_now:
                 await public_channel.send(
                     f"🟡 **[{time_str}]** `{member.display_name}` mudou de **{before.channel.name}** para **{after.channel.name}**."
                 )
-            # (Se for de Privado para Privado, o canal público não recebe nada)
 
 # ==========================================
 # 2. LOGS DE REGISTRO DE AUDITORIA (ADMIN)
