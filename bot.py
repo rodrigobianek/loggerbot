@@ -51,12 +51,12 @@ async def on_ready():
     scheduler.start()
 
 # ==========================================
-# 1. LOGS DE CANAL DE VOZ & TRANSMISSÃO
+# 1. LOGS DE CANAL DE VOZ, STREAM E ÁUDIO
 # ==========================================
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """Registra entrada, saída, troca de canal e transmissões de tela."""
+    """Registra entrada, saída, troca de canal, transmissões de tela e estados de áudio."""
     admin_channel = bot.get_channel(ADMIN_LOG_CHANNEL_ID)
     public_channel = bot.get_channel(PUBLIC_LOG_CHANNEL_ID)
     
@@ -85,9 +85,38 @@ async def on_voice_state_update(member, before, after):
                 await public_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 2. ENTROU EM UM CANAL DE VOZ
+    # 2. ALTERAÇÕES DE ÁUDIO (MUTE / DEAFEN)
     # ---------------------------------------------------------
-    elif before.channel is None and after.channel is not None:
+    channel = after.channel or before.channel
+    
+    # Microfone Pessoal (Self Mute)
+    if before.self_mute != after.self_mute:
+        if admin_channel:
+            status = "mutou o microfone" if after.self_mute else "desmutou o microfone"
+            await admin_channel.send(f"🎙️ **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
+
+    # Ensurdecimento Pessoal (Self Deaf)
+    if before.self_deaf != after.self_deaf:
+        if admin_channel:
+            status = "silenciou o áudio (deaf)" if after.self_deaf else "dessilenciou o áudio"
+            await admin_channel.send(f"🎧 **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
+
+    # Mute por Servidor/Moderador (Server Mute)
+    if before.mute != after.mute:
+        if admin_channel:
+            status = "teve o microfone silenciado por um mod" if after.mute else "teve o microfone liberado por um mod"
+            await admin_channel.send(f"🛡️ **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
+
+    # Deaf por Servidor/Moderador (Server Deaf)
+    if before.deaf != after.deaf:
+        if admin_channel:
+            status = "teve o áudio bloqueado por um mod" if after.deaf else "teve o áudio liberado por um mod"
+            await admin_channel.send(f"🛡️ **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
+
+    # ---------------------------------------------------------
+    # 3. ENTROU EM UM CANAL DE VOZ
+    # ---------------------------------------------------------
+    if before.channel is None and after.channel is not None:
         private = is_channel_private(after.channel)
         active_sessions[member.id] = {
             "channel": after.channel.name,
@@ -103,7 +132,7 @@ async def on_voice_state_update(member, before, after):
             await public_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 3. SAIU TOTALMENTE DO VOZ
+    # 4. SAIU TOTALMENTE DO VOZ
     # ---------------------------------------------------------
     elif before.channel is not None and after.channel is None:
         if member.id in active_sessions:
@@ -131,7 +160,7 @@ async def on_voice_state_update(member, before, after):
                 await public_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 4. TROCOU DE CANAL
+    # 5. TROCOU DE CANAL
     # ---------------------------------------------------------
     elif before.channel is not None and after.channel is not None and before.channel.id != after.channel.id:
         was_private = is_channel_private(before.channel)
@@ -315,7 +344,7 @@ async def export_db(interaction: discord.Interaction):
         await interaction.followup.send("📁 Aqui está a cópia atualizada da sua base de dados SQLite:", file=file, ephemeral=True)
     else:
         await interaction.followup.send("❌ Arquivo de banco de dados não encontrado no caminho.", ephemeral=True)
-        
+
 @fetch_log.error
 @export_db.error
 async def admin_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
