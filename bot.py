@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import io
 from datetime import datetime
 import pytz
 import discord
@@ -8,6 +7,8 @@ from discord import app_commands
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import database
+import csv
+import io
 
 # Configuração de Intents
 intents = discord.Intents.default()
@@ -298,21 +299,18 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
         await interaction.response.send_message(response, ephemeral=True)
 
 
-@bot.tree.command(name="export_db", description="[CARGO BOT] Faz o download do arquivo do banco de dados SQLite.")
+@bot.tree.command(name="export_db", description="[CARGO BOT] Exporta os dados do banco em formato CSV para Excel/Planilhas.")
 async def export_db(interaction: discord.Interaction):
-    """Envia o arquivo .db diretamente no chat para membros com o cargo 'Bot' ou o Dono."""
+    """Gera um arquivo CSV formatado a partir dos dados do SQLite."""
     user = interaction.user
     guild = interaction.guild
 
-    # 1. Checa se é o Dono do Servidor
+    # 1. Validação de Segurança (Cargo "Bot" ou Dono do Servidor)
     is_owner = (guild and user.id == guild.owner_id)
-
-    # 2. Checa se o usuário tem o cargo "Bot" (compara pelo nome exato do cargo)
     has_bot_role = False
     if hasattr(user, "roles"):
-        has_bot_role = any(role.name == "Bot" for role in user.roles)
+        has_bot_role = any(role.name.lower() == "bot" for role in user.roles)
 
-    # Se não for o Dono E não tiver o cargo "Bot", bloqueia a execução
     if not is_owner and not has_bot_role:
         await interaction.response.send_message(
             f"❌ Permissão negada para `{user.display_name}`. Este comando exige o cargo **Bot**.",
@@ -320,20 +318,62 @@ async def export_db(interaction: discord.Interaction):
         )
         return
 
-    # Processa o envio do banco de dados
     await interaction.response.defer(ephemeral=True)
+
+    # 2. Busca todos os registros do banco de dados
+    # Busca um histórico amplo (ex: todos os logs)
+    logs = database.get_logs_by_date(datetime.now(TIMEZONE).strftime("%Y-%m-%d")) 
     
-    db_path = getattr(database, 'DB_NAME', 'database.db')
+    # Dica: Se quiser exportar TODOS os logs salvos na tabela (de qualquer data),
+    # você pode fazer uma consulta direta na conexão do SQLite:
+    try:
+        import sqlite3
+        db_path = getattr(database, 'DB_NAME', 'database.db')
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Puxa todas as colunas da tabela de logs de voz
+        cursor.execute("SELECT * FROM voice_logs ORDER BY id DESC")
+        rows = cursor.fetchall()
+        
+        # Pega os nomes das colunas
+        column_names = [description[0] for description in cursor.description]
+        conn.close()
+
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao ler a base de dados: `{e}`", ephemeral=True)
+        return
+
+    if not rows:
+        await interaction.followup.send("⚠️ Nenhum registro encontrado na base de dados para exportar.", ephemeral=True)
+        return
+
+    # 3. Cria o arquivo CSV em memória sem precisar salvar em disco
+    output = io.StringIO()
+    # utf-8-sig garante que o Excel abra os acentos e caracteres especiais corretamente no Windows
+    output.write('\ufeff') 
     
-    if os.path.exists(db_path):
-        file = discord.File(db_path, filename="database_backup.db")
-        await interaction.followup.send(
-            "📁 Aqui está a cópia atualizada da sua base de dados SQLite:", 
-            file=file, 
-            ephemeral=True
-        )
-    else:
-        await interaction.followup.send("❌ Arquivo de banco de dados não encontrado no caminho especificado.", ephemeral=True)
+    writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+    
+    # Escreve o Cabeçalho
+    writer.writerow(column_names)
+    
+    # Escreve as Linhas
+    writer.writerows(rows)
+
+    # Prepara o buffer para envio no Discord
+    output.seek(0)
+    file_bytes = io.BytesIO(output.getvalue().encode('utf-8-sig'))
+    
+    file_name = f"relatorio_voz_{datetime.now(TIMEZONE).strftime('%Y-%m-%d_%H%M')}.csv"
+    discord_file = discord.File(fp=file_bytes, filename=file_name)
+
+    await interaction.followup.send(
+        f"📊 Aqui está o seu relatório extraído em **CSV** ({len(rows)} registros encontados):",
+        file=discord_file,
+        ephemeral=True
+    )
 
 @fetch_log.error
 @export_db.error
