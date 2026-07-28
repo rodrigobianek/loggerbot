@@ -20,7 +20,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 TIMEZONE = pytz.timezone("America/Sao_Paulo")
 
 # ID do canal onde o bot vai postar os logs em tempo real
-LOG_CHANNEL_ID = 123456789012345678  # <--- Altere para o ID real do seu canal
+LOG_CHANNEL_ID = 1531654435573465318  # <--- Altere para o ID real do seu canal
 
 # Dicionário em memória para registrar quando alguém entra no canal de voz
 # Estrutura: { user_id: { "channel": name, "join_time": datetime } }
