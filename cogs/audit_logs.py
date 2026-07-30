@@ -8,18 +8,6 @@ class AuditLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def _get_log_channel(self):
-        """Busca o canal de log garantindo que o ID seja int e usando fetch_channel caso não esteja no cache."""
-        try:
-            channel_id = int(config.ADMIN_LOG_CHANNEL_ID)
-            channel = self.bot.get_channel(channel_id)
-            if not channel:
-                channel = await self.bot.fetch_channel(channel_id)
-            return channel
-        except Exception as e:
-            print(f"⚠️ [DEBUG] Erro ao localizar o canal de log ({config.ADMIN_LOG_CHANNEL_ID}): {e}")
-            return None
-
     # --------------------------------------------------------
     # 1. MUDANÇAS DE CARGOS EM MEMBROS
     # --------------------------------------------------------
@@ -30,8 +18,9 @@ class AuditLogs(commands.Cog):
 
         print(f"🔍 [DEBUG] Alteração de cargos detectada para: {after.display_name}")
 
-        admin_channel = await self._get_log_channel()
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
         if not admin_channel:
+            print("⚠️ [DEBUG] Canal de log não encontrado. Verifique config.ADMIN_LOG_CHANNEL_ID.")
             return
 
         now = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
@@ -45,7 +34,7 @@ class AuditLogs(commands.Cog):
                     executor = entry.user.display_name
                     break
         except Exception as e:
-            print(f"⚠️ [DEBUG] Falha ao buscar Audit Log: {e}")
+            print(f"⚠️ [DEBUG] Falha ao buscar Audit Log (Falta de permissão?): {e}")
 
         if added_roles:
             await admin_channel.send(
@@ -57,41 +46,29 @@ class AuditLogs(commands.Cog):
             )
 
     # ---------------------------------------------------------
-    # 2. MENSAGENS DELETADAS (RAW - Captura Mensagens Recentes e Antigas)
+    # 2. MENSAGENS DELETADAS
     # ---------------------------------------------------------
     @commands.Cog.listener()
-    async def on_raw_message_delete(self, payload):
-        print(f"🗑️ [DEBUG RAW] Mensagem apagada no canal ID {payload.channel_id} (Msg ID: {payload.message_id})")
-
-        admin_channel = await self._get_log_channel()
-        if not admin_channel:
+    async def on_message_delete(self, message):
+        if message.author.bot:
             return
 
+        print(f"🗑️ [DEBUG] Mensagem apagada no canal #{getattr(message.channel, 'name', 'Desconhecido')}")
+
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if not admin_channel:
+            print("⚠️ [DEBUG] Canal de log não encontrado. Verifique config.ADMIN_LOG_CHANNEL_ID.")
+            return
+
+        channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
+        content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
 
-        # Se a mensagem estava no cache da memória do bot
-        if payload.cached_message:
-            message = payload.cached_message
-            
-            # Ignora se for mensagem emitida por um bot
-            if message.author.bot:
-                return
-
-            channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
-            content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
-
-            msg = (
-                f"🗑️ **[{time_str}]** Mensagem de `{message.author.display_name}` "
-                f"foi apagada no canal **#{channel_name}**:\n"
-                f"> {content}"
-            )
-        else:
-            # Se a mensagem NÃO estava no cache (mensagem antiga/enviada antes do bot ligar)
-            msg = (
-                f"🗑️ **[{time_str}]** Uma mensagem antiga (fora do cache) "
-                f"foi apagada no canal <#{payload.channel_id}>. `(ID da msg: {payload.message_id})`"
-            )
-
+        msg = (
+            f"🗑️ **[{time_str}]** Mensagem de `{message.author.display_name}` "
+            f"foi apagada no canal **#{channel_name}**:\n"
+            f"> {content}"
+        )
         await admin_channel.send(msg)
 
     # ---------------------------------------------------------
@@ -104,8 +81,9 @@ class AuditLogs(commands.Cog):
 
         print(f"⚙️ [DEBUG] Canal renomeado: #{before.name} -> #{after.name}")
 
-        admin_channel = await self._get_log_channel()
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
         if not admin_channel:
+            print("⚠️ [DEBUG] Canal de log não encontrado. Verifique config.ADMIN_LOG_CHANNEL_ID.")
             return
 
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
@@ -132,8 +110,9 @@ class AuditLogs(commands.Cog):
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
         print(f"➕ [DEBUG] Novo canal criado: #{channel.name}")
 
-        admin_channel = await self._get_log_channel()
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
         if not admin_channel:
+            print("⚠️ [DEBUG] Canal de log não encontrado. Verifique config.ADMIN_LOG_CHANNEL_ID.")
             return
 
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
@@ -157,8 +136,9 @@ class AuditLogs(commands.Cog):
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         print(f"➖ [DEBUG] Canal deletado: #{channel.name}")
 
-        admin_channel = await self._get_log_channel()
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
         if not admin_channel:
+            print("⚠️ [DEBUG] Canal de log não encontrado. Verifique config.ADMIN_LOG_CHANNEL_ID.")
             return
 
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
