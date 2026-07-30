@@ -84,11 +84,14 @@ class VoiceLogs(commands.Cog):
             
             if not before.self_stream and after.self_stream:
                 self.active_streams[member.id] = now
-                viewers_count = sum(1 for m in channel.members if not m.bot and m.id != member.id) if channel else 0
+                
+                # Conta quantas OUTRAS pessoas estão no canal de voz no momento em que a transmissão começou
+                # (Exclui bots e o próprio transmissor)
+                members_in_channel = sum(1 for m in channel.members if not m.bot and m.id != member.id) if channel else 0
                 
                 msg = (
                     f"📺 **[{time_str}]** `{member.display_name}` começou a transmitir a tela no canal **{channel.name if channel else 'Voz'}**.\n"
-                    f"👥 **Espectadores no canal:** {viewers_count} pessoa(s)"
+                    f"👥 **Pessoas no canal:** {members_in_channel} membro(s)"
                 )
                 if admin_channel: await admin_channel.send(msg)
                 if public_channel and not private: await public_channel.send(msg)
