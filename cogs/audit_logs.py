@@ -8,9 +8,9 @@ class AuditLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------
     # 1. MUDANÇAS DE CARGOS EM MEMBROS
-    # ---------------------------------------------------------
+    # --------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         if before.roles == after.roles:
