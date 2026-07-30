@@ -57,7 +57,7 @@ class AuditLogs(commands.Cog):
             )
 
     # ---------------------------------------------------------
-    # 2. MENSAGENS DELETADAS (RAW)
+    # 2. MENSAGENS DELETADAS (RAW - Captura Mensagens Recentes e Antigas)
     # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload):
@@ -69,8 +69,11 @@ class AuditLogs(commands.Cog):
 
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
 
+        # Se a mensagem estava no cache da memória do bot
         if payload.cached_message:
             message = payload.cached_message
+            
+            # Ignora se for mensagem emitida por um bot
             if message.author.bot:
                 return
 
@@ -83,6 +86,7 @@ class AuditLogs(commands.Cog):
                 f"> {content}"
             )
         else:
+            # Se a mensagem NÃO estava no cache (mensagem antiga/enviada antes do bot ligar)
             msg = (
                 f"🗑️ **[{time_str}]** Uma mensagem antiga (fora do cache) "
                 f"foi apagada no canal <#{payload.channel_id}>. `(ID da msg: {payload.message_id})`"
@@ -91,36 +95,14 @@ class AuditLogs(commands.Cog):
         await admin_channel.send(msg)
 
     # ---------------------------------------------------------
-    # 3. ALTERAÇÃO EM CANAL (Nome, Tópico, Slowmode, Permissões, etc.)
+    # 3. ALTERAÇÃO EM CANAL (Ex: Mudou de nome)
     # ---------------------------------------------------------
     @commands.Cog.listener()
-    async def on_guild_channel_update(self, before, after):
-        print(f"⚙️ [DEBUG] Evento on_guild_channel_update disparado para #{after.name}")
-
-        changes = []
-
-        # 1. Mudança de Nome
-        if before.name != after.name:
-            changes.append(f"Nome alterado de `#{before.name}` para `#{after.name}`")
-
-        # 2. Mudança de Tópico (Descrição)
-        if getattr(before, 'topic', None) != getattr(after, 'topic', None):
-            old_topic = before.topic if before.topic else "*[Vazio]*"
-            new_topic = after.topic if after.topic else "*[Vazio]*"
-            changes.append(f"Tópico alterado: de `{old_topic}` para `{new_topic}`")
-
-        # 3. Mudança de Modo Lento (Slowmode)
-        if getattr(before, 'slowmode_delay', None) != getattr(after, 'slowmode_delay', None):
-            changes.append(f"Modo lento alterado de `{before.slowmode_delay}s` para `{after.slowmode_delay}s`")
-
-        # 4. Mudança de Status NSFW
-        if getattr(before, 'nsfw', None) != getattr(after, 'nsfw', None):
-            changes.append(f"Status NSFW alterado de `{before.nsfw}` para `{after.nsfw}`")
-
-        # Se nada do que acompanhamos mudou (ex: apenas sincronização de permissões internas), ignoramos
-        if not changes:
-            print("⚙️ [DEBUG] Alteração técnica ignorada (nenhuma mudança de nome, tópico ou configurações visíveis).")
+    async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
+        if before.name == after.name:
             return
+
+        print(f"⚙️ [DEBUG] Canal renomeado: #{before.name} -> #{after.name}")
 
         admin_channel = await self._get_log_channel()
         if not admin_channel:
@@ -130,17 +112,16 @@ class AuditLogs(commands.Cog):
 
         executor = "Desconhecido/Sistema"
         try:
-            async for entry in after.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_update):
+            async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_update):
                 if entry.target.id == after.id:
                     executor = entry.user.display_name
                     break
         except Exception as e:
             print(f"⚠️ [DEBUG] Falha ao buscar Audit Log: {e}")
 
-        detalhes = "\n> ".join(changes)
         msg = (
-            f"⚙️ **[{time_str}] Audit:** Canal **#{after.name}** foi modificado por `{executor}`:\n"
-            f"> {detalhes}"
+            f"⚙️ **[{time_str}] Audit:** `{executor}` renomeou o canal "
+            f"de **#{before.name}** para **#{after.name}**."
         )
         await admin_channel.send(msg)
 
@@ -148,7 +129,7 @@ class AuditLogs(commands.Cog):
     # 4. CRIAÇÃO DE CANAL
     # ---------------------------------------------------------
     @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel):
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
         print(f"➕ [DEBUG] Novo canal criado: #{channel.name}")
 
         admin_channel = await self._get_log_channel()
@@ -159,7 +140,7 @@ class AuditLogs(commands.Cog):
 
         executor = "Desconhecido/Sistema"
         try:
-            async for entry in channel.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_create):
+            async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_create):
                 if entry.target.id == channel.id:
                     executor = entry.user.display_name
                     break
@@ -173,7 +154,7 @@ class AuditLogs(commands.Cog):
     # 5. EXCLUSÃO DE CANAL
     # ---------------------------------------------------------
     @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel):
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
         print(f"➖ [DEBUG] Canal deletado: #{channel.name}")
 
         admin_channel = await self._get_log_channel()
@@ -184,7 +165,7 @@ class AuditLogs(commands.Cog):
 
         executor = "Desconhecido/Sistema"
         try:
-            async for entry in channel.guild.audit_logs(limit=3, action=discord.AuditLogAction.channel_delete):
+            async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
                 if entry.target.id == channel.id:
                     executor = entry.user.display_name
                     break
