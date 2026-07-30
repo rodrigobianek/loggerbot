@@ -16,6 +16,15 @@ intents.moderation = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    
+    # Canal fixo onde o bot avisa que está online/atualizado
+    system_log_channel = bot.get_channel(config.SYSTEM_LOG_CHANNEL_ID)
+    if system_log_channel:
+        await system_log_channel.send("🚀 **Bot reiniciado / Atualização concluída com sucesso!**")
+
+@bot.event
 async def setup_hook():
     database.init_db()
     
