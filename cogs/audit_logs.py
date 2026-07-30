@@ -12,10 +12,8 @@ class AuditLogs(commands.Cog):
         """Busca o canal de log garantindo que o ID seja int e usando fetch_channel caso não esteja no cache."""
         try:
             channel_id = int(config.ADMIN_LOG_CHANNEL_ID)
-            # Tenta buscar do cache
             channel = self.bot.get_channel(channel_id)
             if not channel:
-                # Se não estiver no cache, faz requisição à API do Discord
                 channel = await self.bot.fetch_channel(channel_id)
             return channel
         except Exception as e:
@@ -47,7 +45,7 @@ class AuditLogs(commands.Cog):
                     executor = entry.user.display_name
                     break
         except Exception as e:
-            print(f"⚠️ [DEBUG] Falha ao buscar Audit Log (Falta de permissão?): {e}")
+            print(f"⚠️ [DEBUG] Falha ao buscar Audit Log: {e}")
 
         if added_roles:
             await admin_channel.send(
@@ -59,28 +57,41 @@ class AuditLogs(commands.Cog):
             )
 
     # ---------------------------------------------------------
-    # 2. MENSAGENS DELETADAS
+    # 2. MENSAGENS DELETADAS (RAW - Captura Mensagens Recentes e Antigas)
     # ---------------------------------------------------------
     @commands.Cog.listener()
-    async def on_message_delete(self, message):
-        if message.author.bot:
-            return
-
-        print(f"🗑️ [DEBUG] Mensagem apagada no canal #{getattr(message.channel, 'name', 'Desconhecido')}")
+    async def on_raw_message_delete(self, payload):
+        print(f"🗑️ [DEBUG RAW] Mensagem apagada no canal ID {payload.channel_id} (Msg ID: {payload.message_id})")
 
         admin_channel = await self._get_log_channel()
         if not admin_channel:
             return
 
-        channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
-        content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
         time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
 
-        msg = (
-            f"🗑️ **[{time_str}]** Mensagem de `{message.author.display_name}` "
-            f"foi apagada no canal **#{channel_name}**:\n"
-            f"> {content}"
-        )
+        # Se a mensagem estava no cache da memória do bot
+        if payload.cached_message:
+            message = payload.cached_message
+            
+            # Ignora se for mensagem emitida por um bot
+            if message.author.bot:
+                return
+
+            channel_name = message.channel.name if hasattr(message.channel, 'name') else "Canal Desconhecido"
+            content = message.content if message.content else "*[Mensagem sem texto / apenas anexo ou embed]*"
+
+            msg = (
+                f"🗑️ **[{time_str}]** Mensagem de `{message.author.display_name}` "
+                f"foi apagada no canal **#{channel_name}**:\n"
+                f"> {content}"
+            )
+        else:
+            # Se a mensagem NÃO estava no cache (mensagem antiga/enviada antes do bot ligar)
+            msg = (
+                f"🗑️ **[{time_str}]** Uma mensagem antiga (fora do cache) "
+                f"foi apagada no canal <#{payload.channel_id}>. `(ID da msg: {payload.message_id})`"
+            )
+
         await admin_channel.send(msg)
 
     # ---------------------------------------------------------
