@@ -8,11 +8,12 @@ import database
 from utils.scheduler import start_scheduler
 
 intents = discord.Intents.default()
-intents.voice_states = True
-intents.message_content = True
-intents.members = True
-intents.moderation = True
-intents.guilds = True
+intents.guilds = True           # OBRIGATÓRIO: Para criação, alteração e exclusão de canais
+intents.messages = True         # OBRIGATÓRIO: Para mensagens deletadas
+intents.message_content = True # OBRIGATÓRIO: Para ler o conteúdo da mensagem deletada
+intents.moderation = True       # OBRIGATÓRIO: Para buscar no Audit Log QUEM fez a ação
+intents.members = True          # OBRIGATÓRIO: Para alterações de cargos de membros
+intents.voice_states = True     # OBRIGATÓRIO: Para logs de voz
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 bot.has_notified_startup = False
