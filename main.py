@@ -1,11 +1,12 @@
 import os
+import signal
+import asyncio
 import discord
 from discord.ext import commands
 import config
 import database
 from utils.scheduler import start_scheduler
 
-# Configuração de Intents
 intents = discord.Intents.default()
 intents.voice_states = True
 intents.message_content = True
@@ -16,10 +17,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def setup_hook():
-    """Carrega dinamicamente todos os Cogs e sincroniza a árvore de comandos."""
     database.init_db()
     
-    # Carrega os Cogs
     initial_extensions = [
         "cogs.voice_logs",
         "cogs.audit_logs",
@@ -38,8 +37,21 @@ async def on_ready():
     print(f"Bot conectado com sucesso como {bot.user}")
     start_scheduler(bot)
 
+async def main():
+    async with bot:
+        # Registra desligamento gracioso para capturar SIGTERM (comum em deploys)
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, lambda: asyncio.create_task(bot.close()))
+            except NotImplementedError:
+                # Windows não suporta add_signal_handler completamente para todos os sinais
+                pass
+
+        if config.TOKEN:
+            await bot.start(config.TOKEN)
+        else:
+            print("ERRO: A variável de ambiente DISCORD_TOKEN não foi definida.")
+
 if __name__ == "__main__":
-    if config.TOKEN:
-        bot.run(config.TOKEN)
-    else:
-        print("ERRO: A variável de ambiente DISCORD_TOKEN não foi definida.")
+    asyncio.run(main())

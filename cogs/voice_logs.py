@@ -7,7 +7,6 @@ import database
 class VoiceLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # { user_id: { "channel": name, "join_time": datetime, "is_private": bool } }
         self.active_sessions = {}
         self.active_streams = {}
 
@@ -16,6 +15,59 @@ class VoiceLogs(commands.Cog):
             return False
         everyone_overwrite = channel.overwrites_for(channel.guild.default_role)
         return everyone_overwrite.view_channel is False
+
+    def cog_unload(self):
+        """Executado automaticamente quando o bot desliga ou o Cog é descarregado (Deploy).
+        Salva imediatamente a sessão de todos que estão em salas de voz."""
+        now = datetime.now(config.TIMEZONE)
+        to_save = []
+
+        for user_id, session in list(self.active_sessions.items()):
+            duration = int((now - session["join_time"]).total_seconds())
+            if duration > 0:
+                to_save.append((
+                    session["user_name"],
+                    session["channel"],
+                    session["join_time"].strftime("%Y-%m-%d %H:%M:%S"),
+                    now.strftime("%Y-%m-%d %H:%M:%S"),
+                    duration
+                ))
+
+        if to_save:
+            database.save_multiple_sessions(to_save)
+            print(f"💾 [DEPLOY] {len(to_save)} sessão(ões) ativa(s) salva(s) com sucesso antes do desligamento.")
+
+    async def recover_active_sessions(self):
+        """Verifica se já existem membros em canais de voz ao iniciar e começa a monitorá-los."""
+        now = datetime.now(config.TIMEZONE)
+        recovered_count = 0
+
+        for guild in self.bot.guilds:
+            for channel in guild.voice_channels:
+                private = self.is_channel_private(channel)
+                for member in channel.members:
+                    if not member.bot:
+                        self.active_sessions[member.id] = {
+                            "user_name": member.display_name,
+                            "channel": channel.name,
+                            "join_time": now,
+                            "is_private": private
+                        }
+                        recovered_count += 1
+
+        if recovered_count > 0:
+            print(f"🔄 Recuperadas {recovered_count} sessão(ões) de voz ativas após a inicialização.")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Reconecta quem já estava em salas de voz
+        await self.recover_active_sessions()
+
+        # Envia a mensagem de aviso no canal de logs do admin
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if admin_channel:
+            now_str = datetime.now(config.TIMEZONE).strftime("%d/%m/%Y às %H:%M:%S")
+            await admin_channel.send(f"🚀 **System Update:** O bot foi atualizado e reiniciado com sucesso! `[{now_str}]`")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
@@ -58,7 +110,7 @@ class VoiceLogs(commands.Cog):
                 if admin_channel: await admin_channel.send(msg)
                 if public_channel and not private: await public_channel.send(msg)
 
-        # 2. ALTERAÇÕES DE ÁUDIO (MUTE / DEAF)
+        # 2. ALTERAÇÕES DE ÁUDIO
         channel = after.channel or before.channel
         if before.self_mute != after.self_mute and admin_channel:
             status = "mutou o microfone" if after.self_mute else "desmutou o microfone"
@@ -80,6 +132,7 @@ class VoiceLogs(commands.Cog):
         if before.channel is None and after.channel is not None:
             private = self.is_channel_private(after.channel)
             self.active_sessions[member.id] = {
+                "user_name": member.display_name,
                 "channel": after.channel.name,
                 "join_time": now,
                 "is_private": private
@@ -125,6 +178,7 @@ class VoiceLogs(commands.Cog):
                 )
 
             self.active_sessions[member.id] = {
+                "user_name": member.display_name,
                 "channel": after.channel.name,
                 "join_time": now,
                 "is_private": is_private_now

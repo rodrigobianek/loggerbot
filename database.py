@@ -47,3 +47,15 @@ def get_logs_by_date(date_str: str):
             ORDER BY id DESC
         """, (date_str,))
         return cursor.fetchall()
+
+def save_multiple_sessions(sessions_list):
+    """Recebe uma lista de tuplas e salva tudo em uma única transação."""
+    if not sessions_list:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT INTO voice_logs (user_name, channel_name, join_time, leave_time, duration_seconds)
+            VALUES (?, ?, ?, ?, ?)
+        """, sessions_list)
+        conn.commit()
