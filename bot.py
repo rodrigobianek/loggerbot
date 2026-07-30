@@ -27,6 +27,7 @@ PUBLIC_LOG_CHANNEL_ID = 1531674099708072098  # Canal público de Notificações
 
 # Estrutura em memória: { user_id: { "channel": name, "join_time": datetime, "is_private": bool } }
 active_sessions = {}
+active_streams = {}
 
 def is_channel_private(channel: discord.VoiceChannel) -> bool:
     """Verifica se o cargo @everyone NÃO tem permissão de ver o canal."""
@@ -71,15 +72,44 @@ async def on_voice_state_update(member, before, after):
         channel = after.channel or before.channel
         private = is_channel_private(channel) if channel else False
         
+        # INICIOU A TRANSMISSÃO
         if not before.self_stream and after.self_stream:
-            msg = f"📺 **[{time_str}]** `{member.display_name}` começou a transmitir a tela no canal **{channel.name}**."
+            active_streams[member.id] = now
+            
+            # Conta quantas pessoas (sem contar bots e o próprio streamer) já estão no canal
+            viewers_count = sum(1 for m in channel.members if not m.bot and m.id != member.id) if channel else 0
+            
+            msg = (
+                f"📺 **[{time_str}]** `{member.display_name}` começou a transmitir a tela no canal **{channel.name if channel else 'Voz'}**.\n"
+                f"👥 **Espectadores no canal:** {viewers_count} pessoa(s)"
+            )
+            
             if admin_channel:
                 await admin_channel.send(msg)
             if public_channel and not private:
                 await public_channel.send(msg)
                 
+        # ENCERROU A TRANSMISSÃO
         elif before.self_stream and not after.self_stream:
-            msg = f"📺 **[{time_str}]** `{member.display_name}` encerrou a transmissão de tela no canal **{channel.name}**."
+            stream_start = active_streams.pop(member.id, None)
+            
+            duration_str = "Desconhecida"
+            if stream_start:
+                duration_seconds = int((now - stream_start).total_seconds())
+                hours = duration_seconds // 3600
+                minutes = (duration_seconds % 3600) // 60
+                seconds = duration_seconds % 60
+                
+                if hours > 0:
+                    duration_str = f"{hours}h {minutes}m {seconds}s"
+                else:
+                    duration_str = f"{minutes}m {seconds}s"
+
+            msg = (
+                f"📺 **[{time_str}]** `{member.display_name}` encerrou a transmissão de tela no canal **{channel.name if channel else 'Voz'}**.\n"
+                f"⏱️ **Duração da transmissão:** `{duration_str}`"
+            )
+            
             if admin_channel:
                 await admin_channel.send(msg)
             if public_channel and not private:
@@ -90,25 +120,21 @@ async def on_voice_state_update(member, before, after):
     # ---------------------------------------------------------
     channel = after.channel or before.channel
     
-    # Microfone Pessoal (Self Mute)
     if before.self_mute != after.self_mute:
         if admin_channel:
             status = "mutou o microfone" if after.self_mute else "desmutou o microfone"
             await admin_channel.send(f"🎙️ **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
 
-    # Ensurdecimento Pessoal (Self Deaf)
     if before.self_deaf != after.self_deaf:
         if admin_channel:
             status = "silenciou o áudio (deaf)" if after.self_deaf else "dessilenciou o áudio"
             await admin_channel.send(f"🎧 **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
 
-    # Mute por Servidor/Moderador (Server Mute)
     if before.mute != after.mute:
         if admin_channel:
             status = "teve o microfone silenciado por um mod" if after.mute else "teve o microfone liberado por um mod"
             await admin_channel.send(f"🛡️ **[{time_str}]** `{member.display_name}` {status} em **{channel.name if channel else 'Voz'}**.")
 
-    # Deaf por Servidor/Moderador (Server Deaf)
     if before.deaf != after.deaf:
         if admin_channel:
             status = "teve o áudio bloqueado por um mod" if after.deaf else "teve o áudio liberado por um mod"
@@ -136,6 +162,9 @@ async def on_voice_state_update(member, before, after):
     # 4. SAIU TOTALMENTE DO VOZ
     # ---------------------------------------------------------
     elif before.channel is not None and after.channel is None:
+        if member.id in active_streams:
+            active_streams.pop(member.id, None)
+
         if member.id in active_sessions:
             session = active_sessions.pop(member.id)
             duration = int((now - session["join_time"]).total_seconds())
@@ -214,7 +243,7 @@ async def on_member_update(before, after):
     if before.roles != after.roles:
         now = datetime.now(TIMEZONE).strftime("%H:%M:%S")
         added_roles = [role.name for role in after.roles if role not in before.roles]
-        removed_roles = [role.name for role in before.roles if role not in after.roles]
+        removed_roles = [role.name for role in before.roles if role not in after.roles]  # CORRIGIDO AQUI
 
         executor = "Desconhecido/Sistema"
         try:
@@ -261,14 +290,9 @@ async def on_message_delete(message):
 # 3. COMANDOS ADMINISTRATIVOS & BANCO DE DADOS
 # ==========================================
 
-# ==========================================
-# 3. COMANDOS ADMINISTRATIVOS & BANCO DE DADOS
-# ==========================================
-
 @bot.tree.command(name="log", description="[ADMIN] Consulta os registros de voz do servidor.")
-@app_commands.describe(data="Data da consulta no formato AAAA-MM-DD. Deixe em blank para o dia de hoje.")
+@app_commands.describe(data="Data da consulta no formato AAAA-MM-DD. Deixe em branco para o dia de hoje.")
 async def fetch_log(interaction: discord.Interaction, data: str = None):
-    # Checagem manual de Administrador (Garante que o Dono ou Admins passem sem erro de cache)
     if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("❌ Permissão negada. Comando restrito a Administradores.", ephemeral=True)
         return
@@ -286,8 +310,8 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
     for user_name, channel_name, join_time, leave_time, duration in logs:
         mins = duration // 60
         secs = duration % 60
-        entry_time = join_time.split(" ")[1]
-        exit_time = leave_time.split(" ")[1]
+        entry_time = join_time.split(" ")[1] if " " in join_time else join_time
+        exit_time = leave_time.split(" ")[1] if " " in leave_time else leave_time
         response += f"• **{user_name}** | Canal: `{channel_name}` | Permanência: {mins}m {secs}s ({entry_time} às {exit_time})\n"
 
     if len(response) > 2000:
@@ -298,14 +322,12 @@ async def fetch_log(interaction: discord.Interaction, data: str = None):
     else:
         await interaction.response.send_message(response, ephemeral=True)
 
-
 @bot.tree.command(name="export_db", description="[CARGO BOT] Exporta os dados do banco em formato CSV para Excel/Planilhas.")
 async def export_db(interaction: discord.Interaction):
     """Gera um arquivo CSV formatado a partir dos dados do SQLite."""
     user = interaction.user
     guild = interaction.guild
 
-    # 1. Validação de Segurança (Cargo "Bot" ou Dono do Servidor)
     is_owner = (guild and user.id == guild.owner_id)
     has_bot_role = False
     if hasattr(user, "roles"):
@@ -320,24 +342,15 @@ async def export_db(interaction: discord.Interaction):
 
     await interaction.response.defer(ephemeral=True)
 
-    # 2. Busca todos os registros do banco de dados
-    # Busca um histórico amplo (ex: todos os logs)
-    logs = database.get_logs_by_date(datetime.now(TIMEZONE).strftime("%Y-%m-%d")) 
-    
-    # Dica: Se quiser exportar TODOS os logs salvos na tabela (de qualquer data),
-    # você pode fazer uma consulta direta na conexão do SQLite:
     try:
-        import sqlite3
         db_path = getattr(database, 'DB_NAME', 'database.db')
         
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Puxa todas as colunas da tabela de logs de voz
         cursor.execute("SELECT * FROM voice_logs ORDER BY id DESC")
         rows = cursor.fetchall()
         
-        # Pega os nomes das colunas
         column_names = [description[0] for description in cursor.description]
         conn.close()
 
@@ -349,20 +362,13 @@ async def export_db(interaction: discord.Interaction):
         await interaction.followup.send("⚠️ Nenhum registro encontrado na base de dados para exportar.", ephemeral=True)
         return
 
-    # 3. Cria o arquivo CSV em memória sem precisar salvar em disco
     output = io.StringIO()
-    # utf-8-sig garante que o Excel abra os acentos e caracteres especiais corretamente no Windows
     output.write('\ufeff') 
     
     writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_MINIMAL)
-    
-    # Escreve o Cabeçalho
     writer.writerow(column_names)
-    
-    # Escreve as Linhas
     writer.writerows(rows)
 
-    # Prepara o buffer para envio no Discord
     output.seek(0)
     file_bytes = io.BytesIO(output.getvalue().encode('utf-8-sig'))
     
@@ -370,7 +376,7 @@ async def export_db(interaction: discord.Interaction):
     discord_file = discord.File(fp=file_bytes, filename=file_name)
 
     await interaction.followup.send(
-        f"📊 Aqui está o seu relatório extraído em **CSV** ({len(rows)} registros encontados):",
+        f"📊 Aqui está o seu relatório extraído em **CSV** ({len(rows)} registros encontrados):",
         file=discord_file,
         ephemeral=True
     )
