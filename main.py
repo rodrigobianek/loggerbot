@@ -12,17 +12,22 @@ intents.voice_states = True
 intents.message_content = True
 intents.members = True
 intents.moderation = True
+intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+bot.has_notified_startup = False
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-    
-    # Canal fixo onde o bot avisa que está online/atualizado
-    system_log_channel = bot.get_channel(config.SYSTEM_LOG_CHANNEL_ID)
-    if system_log_channel:
-        await system_log_channel.send("🚀 **Bot reiniciado / Atualização concluída com sucesso!**")
+    print(f"✅ Bot conectado como {bot.user}")
+
+    # Envia a mensagem apenas na PRIMEIRA vez que o processo do bot liga
+    if not bot.has_notified_startup:
+        admin_channel = bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if admin_channel:
+            await admin_channel.send("🚀 **Bot reiniciado / Atualização concluída com sucesso!**")
+        
+        bot.has_notified_startup = True
 
 @bot.event
 async def setup_hook():

@@ -3,10 +3,14 @@ import discord
 from discord.ext import commands
 import config
 
+
 class AuditLogs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # ---------------------------------------------------------
+    # 1. MUDANÇAS DE CARGOS EM MEMBROS
+    # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
@@ -36,6 +40,9 @@ class AuditLogs(commands.Cog):
                     f"🛡️ **[{now}] Audit:** `{executor}` removeu o(s) cargo(s) `{', '.join(removed_roles)}` de `{after.display_name}`."
                 )
 
+    # ---------------------------------------------------------
+    # 2. MENSAGENS DELETADAS
+    # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         if message.author.bot:
@@ -55,6 +62,82 @@ class AuditLogs(commands.Cog):
             f"> {content}"
         )
         await admin_channel.send(msg)
+
+    # ---------------------------------------------------------
+    # 3. ALTERAÇÃO EM CANAL (Ex: Mudou de nome)
+    # ---------------------------------------------------------
+    @commands.Cog.listener()
+    async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if not admin_channel:
+            return
+
+        time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
+
+        # Tenta buscar no Registro de Auditoria quem alterou
+        executor = "Desconhecido/Sistema"
+        try:
+            async for entry in after.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_update):
+                if entry.target.id == after.id:
+                    executor = entry.user.display_name
+                    break
+        except Exception:
+            pass
+
+        # Detecta mudança no NOME do canal
+        if before.name != after.name:
+            msg = (
+                f"⚙️ **[{time_str}] Audit:** `{executor}` renomeou o canal "
+                f"de **#{before.name}** para **#{after.name}**."
+            )
+            await admin_channel.send(msg)
+
+    # ---------------------------------------------------------
+    # 4. CRIAÇÃO DE CANAL
+    # ---------------------------------------------------------
+    @commands.Cog.listener()
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if not admin_channel:
+            return
+
+        time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
+
+        executor = "Desconhecido/Sistema"
+        try:
+            async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_create):
+                if entry.target.id == channel.id:
+                    executor = entry.user.display_name
+                    break
+        except Exception:
+            pass
+
+        msg = f"➕ **[{time_str}] Audit:** `{executor}` criou o canal **#{channel.name}**."
+        await admin_channel.send(msg)
+
+    # ---------------------------------------------------------
+    # 5. EXCLUSÃO DE CANAL
+    # ---------------------------------------------------------
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
+        admin_channel = self.bot.get_channel(config.ADMIN_LOG_CHANNEL_ID)
+        if not admin_channel:
+            return
+
+        time_str = datetime.now(config.TIMEZONE).strftime("%H:%M:%S")
+
+        executor = "Desconhecido/Sistema"
+        try:
+            async for entry in channel.guild.audit_logs(limit=1, action=discord.AuditLogAction.channel_delete):
+                if entry.target.id == channel.id:
+                    executor = entry.user.display_name
+                    break
+        except Exception:
+            pass
+
+        msg = f"➖ **[{time_str}] Audit:** `{executor}` deletou o canal **#{channel.name}**."
+        await admin_channel.send(msg)
+
 
 async def setup(bot):
     await bot.add_cog(AuditLogs(bot))
