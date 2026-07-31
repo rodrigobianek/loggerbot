@@ -54,7 +54,7 @@ async def on_ready():
             channel_id = int(config.ADMIN_LOG_CHANNEL_ID)
             admin_channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
             if admin_channel:
-                await admin_channel.send("🚀 **Bot reiniciado / Atualização concluída com sucesso!**")
+                await admin_channel.send("🚀 **Bot reiniciado / Atualização concluída!**")
         except Exception as e:
             print(f"⚠️ Erro ao enviar mensagem de inicialização: {e}")
         
