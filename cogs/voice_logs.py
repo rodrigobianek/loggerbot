@@ -161,6 +161,12 @@ class VoiceLogs(commands.Cog):
                 
                 minutes, seconds = duration // 60, duration % 60
                 msg = f"🔴 **[{time_str}]** `{member.display_name}` desconectou de **{session['channel']}**. (Tempo online: {minutes}m {seconds}s)"
+                username_lower = member.name.lower()
+                if username_lower.startswith("bzor"):
+                    msg = (
+                        f"🔴 **[{time_str}]** `{member.display_name}` tiltou*."
+                        f"(Aguentou apenas: {minutes}m {seconds}s)\n"
+                    )
                 if admin_channel: await admin_channel.send(msg)
                 if public_channel and not session["is_private"]: await public_channel.send(msg)
 
